@@ -3,86 +3,20 @@ import emailfunctions
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 import time
 from datetime import datetime
-import pandas as pd
 import xarray as xr
 import cfgrib
 import pandas as pd
 import numpy as np
 import time
+from codec import encode
+
 print('Import finished', flush=True)
 
 LIST_OF_PREVIOUS_MESSAGES_FILE_LOCATION = ""
 YOUR_EMAIL = ""
 
 
-def processGrib(path):
-    grib = xr.open_dataset(path).to_dataframe() # Was easiest for me to process the grib as a pandas dataframe.
-
-    timepoints = grib.index.get_level_values(0).unique()
-    latmin = grib.index.get_level_values(1).unique().min()
-    latmax = grib.index.get_level_values(1).unique().max()
-
-    lonmin = grib.index.get_level_values(2).unique().min()
-    lonmax = grib.index.get_level_values(2).unique().max()
-    latdiff = pd.Series(grib.index.get_level_values(1).unique()).diff().dropna().round(6).unique() # This is the difference between each lat/lon point. It was mainly used for debugging.
-    londiff = pd.Series(grib.index.get_level_values(2).unique()).diff().dropna().round(6).unique()
-
-    if len(latdiff) > 1 or len(londiff) > 1:
-        print('Irregular point separations!', flush=True)
-
-    gribtime = grib['time'].iloc[0]
-
-    mag = (np.sqrt(grib['u10']**2 + grib['v10']**2)*1.94384/5).round().astype('int').clip(upper=15).apply(lambda x: "{0:04b}".format(x)).str.cat()
-    # This grabs the U-component and V-component of wind speed, calculates the magnitude in kts, rounds to the nearest 5kt speed, and converts to binary.
-    dirs = (((round(np.arctan2(grib['v10'],grib['u10']) / (2 * np.pi / 16))) + 16) % 16).astype('int').apply(lambda x: "{0:04b}".format(x)).str.cat()
-    # This encodes the wind direction into 16 cardinal directions and converts to vinary.
-
-    import os
-    os.remove(path)
-    return mag + dirs, timepoints, latmin, latmax, lonmin, lonmax, latdiff, londiff, gribtime
-
-def messageCreator(bin_data, timepoints, latmin, latmax, lonmin, lonmax, latdiff, londiff, gribtime, shift):
-    # This function encodes the grib binary data into characters that can be sent over the inReach.
-    chars = """!"#$%\'()*+,-./:;<=>?_¡£¥¿&¤0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÅÆÇÉÑØøÜßÖàäåæèéìñòöùüΔΦΓΛΩΠΨΣΘΞ""" # Allowed inReach characters.
-    extrachars = {122:'@!',
-    123:'@@',
-    124:'@#',
-    125:'@$',
-    126:'@%',
-    127:'@?'} # To get a full range of 128 code possibilities, these are extra two character codes.
-
-    def encoder(x, shift): # This encodes the binary 8-bit chunks into the coding scheme based on the SHIFT.
-        if len(x) < 7:
-            x = x + '0'*(7-len(x))
-        new_chars = chars[shift:] + chars[:shift]
-        dec = int(x,2)
-        if dec < 122:
-            return new_chars[dec]
-        else:
-            return extrachars[dec]
-
-    encoded = ''
-    for piece in [bin_data[i:i+7] for i in range(0, len(bin_data), 7)]: # This sends the binary chunks to the encoder.
-        encoded = encoded + encoder(piece,shift)
-
-    # This forms the message that will be sent. I wanted times and lat/long to be explicitly written for debugging purposes but these could improved.
-    gribmessage = """{times}
-{iss}
-{minmax}
-{diff}
-{shift}
-{data}
-END""".format(times=",".join((timepoints/ np.timedelta64(1, 'h')).astype('int').astype('str').to_list()),
-                    iss=str(gribtime),
-                    minmax=','.join(str(x) for x in [latmin,latmax,lonmin,lonmax]),
-                    diff=str(latdiff[0])+","+str(londiff[0]),
-                    shift = shift,
-                    data=encoded)
-    msg_len = 120 # Had problems with the messages being cutoff, even though they shouldn't have been according to Garmin's specifications. 120 character messages seemed like a safe bet.
-    message_parts = [gribmessage[i:i+msg_len] for i in range(0, len(gribmessage), msg_len)] # Breaks up the big message into individual parts to send.
-    return [str(i) + '\n' + message_parts[i] + '\n' + str(i) if i > 0 else message_parts[i] + '\n' + str(i) for i in range(len(message_parts))]
-
-def inreachReply(url,message_str):
+def inreachReply(url, message_str):
     # This uses the requests module to send a spoofed response to Garmin. I found no trouble reusing the MessageId over and over again but I do not know if there are risks with this.
     # I tried to use the same GUID from the specific incoming garmin email.
     import requests
@@ -123,6 +57,15 @@ def inreachReply(url,message_str):
         print('Sent', flush=True)
     return response
 
+
+def send_sms_via_url(url):
+    def send_sms(part):
+        res = inreachReply(url, part)
+        time.sleep(10)  # Give inReach some time to send the SMS
+        return (res.status_code == 200)
+    return send_sms
+
+
 def answerService(message_id):
     msg = service.users().messages().get(userId='me', id=message_id).execute()
     msg_text = urlsafe_b64decode(msg['payload']['body']['data']).decode().split('\r')[0].lower()
@@ -147,32 +90,16 @@ def answerService(message_id):
             except:
                 inreachReply(url, "Could not download attachment")
                 return
-            bin_data, timepoints, latmin, latmax, lonmin, lonmax, latdiff, londiff, gribtime = processGrib(grib_path)
 
-            for shift in range(1,10): # Due to Garmin's inability to send certain character combinations (such as ">f" if I recall), this shift attempts to try different encoding schemes.
-                # If the message fails to send, the characters are shifted over by one and it's attempted again.
-                message_parts = messageCreator(bin_data, timepoints, latmin, latmax, lonmin, lonmax, latdiff, londiff, gribtime, shift)
-                for i in message_parts:
-                    print(i, flush=True)
-                for part in message_parts:
-                    res = inreachReply(url, part) # Attempt to send each part of the message.
-                    if res.status_code != 200:
-                        time.sleep(10)
-                        if part == message_parts[0]:
-                            break
-                        else:
-                            inreachReply(url, 'Message failed attempting shift') # If it couldn't be sent, entire process is restarted.
-                            # This could be improved, by maybe not restarting the entire process and indicating that the shift has changed.
-                            break
-                    time.sleep(10)
-                if res.status_code == 200:
-                    break
+            encode(grib_path, send_sms_via_url(url))
+
         else:
             inreachReply(url, "Saildocs timeout")
             return False
     else:
         inreachReply(url, "Invalid model")
         return False
+
 
 def checkMail():
     ### This function checks the email inbox for Garmin inReach messages. I tried to account for multiple messages.
@@ -195,6 +122,7 @@ def checkMail():
             print(e, flush=True)
         with open(LIST_OF_PREVIOUS_MESSAGES_FILE_LOCATION, 'a') as file: # Whether answering was a success or failure, add message to list.
             file.write('\n'+message_id)
+
 
 print('Starting loop')
 while(True):
