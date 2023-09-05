@@ -209,9 +209,9 @@ def decode(parts, grib_file):
     # Create a sample DataFrame with one array of values
     longitude = np.linspace(lonmin, lonmax, 1 + int(round((lonmax-lonmin)/londiff)), endpoint=True)
     latitude = np.linspace(latmin, latmax, 1 + int(round((latmax-latmin)/latdiff)), endpoint=True)
-    print(f"lon:{len(longitude)}")
-    print(f"lat:{len(latitude)}")
-    print(f"v10:{len(v10)}, u10:{len(u10)}")
+    #print(f"lon:{len(longitude)}")
+    #print(f"lat:{len(latitude)}")
+    #print(f"v10:{len(v10)}, u10:{len(u10)}")
     # Make v10 and u10 per hour and "square":
     v10 = reindex(v10, hours, latitude, longitude)
     u10 = reindex(u10, hours, latitude, longitude)
