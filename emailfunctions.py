@@ -16,10 +16,10 @@ from mimetypes import guess_type as guess_mime_type
 
 # Request all access (permission to read/send/receive emails, manage the inbox, and more)
 SCOPES = ['https://mail.google.com/']
-our_email = '' # Your email
-TOKEN_PATH = '' # Path where you want to save token file.
-CREDENTIALS_PATH = '' # This is the location of the downloaded Gmail credentials.
-FILE_PATH = '' # Where you want to save attachment files.
+our_email = os.environ.get("YOUR_EMAIL", "foo@bar.baz")  # Your email
+TOKEN_PATH = os.environ.get("TOKEN_PATH", "/tmp/GRIB-via-inReach/.token") # Path where you want to save token file.
+CREDENTIALS_PATH = os.environ.get("CREDENTIALS_PATH", "/tmp/GRIB-via-inReach/credentials.json") # This is the location of the downloaded Gmail credentials.
+ATTACHMENTS_PATH = os.environ.get("ATTACHMENTS_PATH", "/tmp/GRIB-via-inReach/attachments") # Where you want to save attachment files.
 
 def gmail_authenticate():
     creds = None
@@ -97,9 +97,9 @@ def GetAttachments(service, msg_id, user_id='me'):
                 file_data = base64.urlsafe_b64decode(data.encode('UTF-8'))
                 path = part['filename']
 
-                with open(FILE_PATH + path, 'wb') as f:
+                with open(ATTACHMENTS_PATH + path, 'wb') as f:
                     f.write(file_data)
-        return FILE_PATH + path
+        return ATTACHMENTS_PATH + path
 
     except:
         print('An error occurred: %s' % error)

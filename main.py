@@ -1,22 +1,21 @@
-print('Starting import', flush=True)
 import emailfunctions
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 import time
 from datetime import datetime
 import xarray as xr
 import cfgrib
-import pandas as pd
 import numpy as np
 import time
 from codec import encode
 
-print('Import finished', flush=True)
+import os
+import re
 
-LIST_OF_PREVIOUS_MESSAGES_FILE_LOCATION = ""
-YOUR_EMAIL = ""
+LIST_OF_PREVIOUS_MESSAGES_FILE_LOCATION = os.environ.get("LIST_OF_PREVIOUS_MESSAGES_FILE_LOCATION", "/tmp/GRIB-via-inReach")
+YOUR_EMAIL = os.environ.get("YOUR_EMAIL", "foo@bar.baz")
 
 
-def inreachReply(url, message_str):
+def inreachReply(url, domain_prefix, message_str):
     # This uses the requests module to send a spoofed response to Garmin. I found no trouble reusing the MessageId over and over again but I do not know if there are risks with this.
     # I tried to use the same GUID from the specific incoming garmin email.
     import requests
@@ -26,16 +25,19 @@ def inreachReply(url, message_str):
     }
 
     headers = {
-        'authority': 'explore.garmin.com',
+        'authority': f"{domain_prefix}explore.garmin.com",
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9',
+        'cache-control': 'no-cache',
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
         # 'cookie': 'BrowsingMode=Desktop',
-        'origin': 'https://explore.garmin.com',
+        'dnt': '1',
+        'origin': f"https://{domain_prefix}explore.garmin.com",
+        'pragma': 'no-cache',
         'referer': url,
         'sec-ch-ua': '"Chromium";v="106", "Not;A=Brand";v="99", "Google Chrome";v="106.0.5249.119"',
         'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
+        'sec-ch-ua-platform': '"Linux"',
         'sec-fetch-dest': 'empty',
         'sec-fetch-mode': 'cors',
         'sec-fetch-site': 'same-origin',
@@ -50,12 +52,14 @@ def inreachReply(url, message_str):
         'Guid': url.split('extId=')[1].split('&adr')[0],
     }
 
-    response = requests.post('https://explore.garmin.com/TextMessage/TxtMsg', cookies=cookies, headers=headers, data=data)
-    if response.status_code != 200:
-        print('Could not send!', flush=True)
+    r = requests.post(f"https://{domain_prefix}explore.garmin.com/TextMessage/TxtMsg", cookies=cookies, headers=headers, data=data)
+    if r.status_code != 200:
+        print(f"Could not send! response code={r.status_code}, text={r.text}, headers={r.headers}, history={r.history}, data was {data}", flush=True)
     else:
         print('Sent', flush=True)
-    return response
+    return r
+
+GARMIN_URL_RE = re.compile("https://([a-z]*\.)?explore.garmin.com")
 
 
 def send_sms_via_url(url):
@@ -67,9 +71,21 @@ def send_sms_via_url(url):
 
 
 def answerService(message_id):
+    print(f"answerService {message_id}")
     msg = service.users().messages().get(userId='me', id=message_id).execute()
     msg_text = urlsafe_b64decode(msg['payload']['body']['data']).decode().split('\r')[0].lower()
-    url = [x.replace('\r','') for x in urlsafe_b64decode(msg['payload']['body']['data']).decode().split('\n') if 'https://explore.garmin.com' in x][0] # Grabs the unique Garmin URL for answering.
+    print(f"text = {msg_text}")
+    url = None
+    domain_prefix = None
+    for line in urlsafe_b64decode(msg['payload']['body']['data']).decode().split('\n'):
+        m = GARMIN_URL_RE.search(line)
+        if m is not None:
+            url = m.group(0).replace('\r', '')
+            domain_prefix = m.group(1)
+            break
+    if url is None:
+        print("Cannot find GARMIN URL")
+        return
 
     if msg_text[:5] == 'ecmwf' or msg_text[:3] == 'gfs': # Only allows for ECMWF or GFS model
         emailfunctions.send_message(service, "query@saildocs.com", "", "send " + msg_text) # Sends message to saildocs according to their formatting.
@@ -88,16 +104,16 @@ def answerService(message_id):
             try:
                 grib_path = emailfunctions.GetAttachments(service, last_response['id'])
             except:
-                inreachReply(url, "Could not download attachment")
+                inreachReply(url, domain_prefix, "Could not download attachment")
                 return
 
             encode(grib_path, send_sms_via_url(url))
 
         else:
-            inreachReply(url, "Saildocs timeout")
+            inreachReply(url, domain_prefix, "Saildocs timeout")
             return False
     else:
-        inreachReply(url, "Invalid model")
+        inreachReply(url, domain_prefix, "Invalid model")
         return False
 
 
@@ -105,28 +121,30 @@ def checkMail():
     ### This function checks the email inbox for Garmin inReach messages. I tried to account for multiple messages.
     global service
     service = emailfunctions.gmail_authenticate()
-    results = emailfunctions.search_messages(service,"no.reply.inreach@garmin.com")
+    results = emailfunctions.search_messages(service, "no.reply.inreach@garmin.com")
+    print(f"results={results}", flush=True)
 
     inreach_msgs = []
     for result in results:
         inreach_msgs.append(result['id'])
 
-    with open(LIST_OF_PREVIOUS_MESSAGES_FILE_LOCATION) as f: # This is a running list of previous inReach messages that have already been responded to.
+    with open(LIST_OF_PREVIOUS_MESSAGES_FILE_LOCATION, 'a+t') as f: # This is a running list of previous inReach messages that have already been responded to.
+        f.seek(0)
         previous = f.read()
 
-    unanswered = [message for message in inreach_msgs if message not in previous.split('\n')]
-    for message_id in unanswered:
-        try:
-            answerService(message_id)
-        except Exception as e:
-            print(e, flush=True)
-        with open(LIST_OF_PREVIOUS_MESSAGES_FILE_LOCATION, 'a') as file: # Whether answering was a success or failure, add message to list.
-            file.write('\n'+message_id)
+        unanswered = [message for message in inreach_msgs if message not in previous.split('\n')]
+        for message_id in unanswered:
+            try:
+                answerService(message_id)
+            except Exception as e:
+                print(e, flush=True)
+            # Whether answering was a success or failure, add message to list.
+            f.write(message_id + '\n')
 
 
 print('Starting loop')
 while(True):
-    time.sleep(60)
+    time.sleep(10)
     print('Checking...', flush=True)
     checkMail()
     time.sleep(240)
