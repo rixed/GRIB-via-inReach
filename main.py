@@ -5,6 +5,7 @@ from datetime import datetime
 import xarray as xr
 import cfgrib
 import numpy as np
+import pandas as pd
 import time
 from codec import encode
 
@@ -30,7 +31,7 @@ def inreachReply(url, domain_prefix, message_str):
         'accept-language': 'en-US,en;q=0.9',
         'cache-control': 'no-cache',
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        # 'cookie': 'BrowsingMode=Desktop',
+        'cookie': 'BrowsingMode=Desktop',
         'dnt': '1',
         'origin': f"https://{domain_prefix}explore.garmin.com",
         'pragma': 'no-cache',
@@ -52,40 +53,44 @@ def inreachReply(url, domain_prefix, message_str):
         'Guid': url.split('extId=')[1].split('&adr')[0],
     }
 
+    print(f"inreachReply: posting with headers {headers} and data {data}...", flush=True)
     r = requests.post(f"https://{domain_prefix}explore.garmin.com/TextMessage/TxtMsg", cookies=cookies, headers=headers, data=data)
     if r.status_code != 200:
-        print(f"Could not send! response code={r.status_code}, text={r.text}, headers={r.headers}, history={r.history}, data was {data}", flush=True)
+        print(f"Could not send! response code={r.status_code}, headers={r.headers}, history={r.history}, data was {data}", flush=True)
     else:
         print('Sent', flush=True)
     return r
 
-GARMIN_URL_RE = re.compile("https://([a-z]*\.)?explore.garmin.com")
-
-
-def send_sms_via_url(url):
+def send_sms_via_url(url, domain_prefix):
     def send_sms(part):
-        res = inreachReply(url, part)
+        print(f"Sending to {url} ({domain_prefix}):\n{part}", flush=True)
+        res = inreachReply(url, domain_prefix, part)
+        print(f"sent!", flush=True)
         time.sleep(10)  # Give inReach some time to send the SMS
         return (res.status_code == 200)
     return send_sms
 
 
+GARMIN_URL_RE = re.compile("https://([a-z]*\.)?explore.garmin.com")
+
 def answerService(message_id):
-    print(f"answerService {message_id}")
+    print(f"answerService {message_id}", flush=True)
     msg = service.users().messages().get(userId='me', id=message_id).execute()
     msg_text = urlsafe_b64decode(msg['payload']['body']['data']).decode().split('\r')[0].lower()
-    print(f"text = {msg_text}")
+    print(f"text = {msg_text}", flush=True)
     url = None
     domain_prefix = None
     for line in urlsafe_b64decode(msg['payload']['body']['data']).decode().split('\n'):
         m = GARMIN_URL_RE.search(line)
         if m is not None:
-            url = m.group(0).replace('\r', '')
+            url = line.replace('\r', '')
             domain_prefix = m.group(1)
             break
     if url is None:
-        print("Cannot find GARMIN URL")
+        print("Cannot find GARMIN URL", flush=True)
         return
+    else:
+        print(f"Will send using url:{url} and domain_prefix:{domain_prefix}")
 
     if msg_text[:5] == 'ecmwf' or msg_text[:3] == 'gfs': # Only allows for ECMWF or GFS model
         emailfunctions.send_message(service, "query@saildocs.com", "", "send " + msg_text) # Sends message to saildocs according to their formatting.
@@ -93,10 +98,12 @@ def answerService(message_id):
         valid_response = False
 
         for i in range(60): # Waits for reply and makes sure reply received aligns with request (there's probably a better way to do this).
+            print("Waiting for answer...")
             time.sleep(10)
             last_response = emailfunctions.search_messages(service,"query-reply@saildocs.com")[0]
             time_received = pd.to_datetime(service.users().messages().get(userId='me', id=last_response['id']).execute()['payload']['headers'][-1]['value'].split('(UTC)')[0])
             if time_received > time_sent:
+                print("Found response!")
                 valid_response = True
                 break
 
@@ -107,7 +114,8 @@ def answerService(message_id):
                 inreachReply(url, domain_prefix, "Could not download attachment")
                 return
 
-            encode(grib_path, send_sms_via_url(url))
+            print("Found attachment, encoding it...")
+            encode(grib_path, send_sms_via_url(url, domain_prefix))
 
         else:
             inreachReply(url, domain_prefix, "Saildocs timeout")
@@ -122,7 +130,7 @@ def checkMail():
     global service
     service = emailfunctions.gmail_authenticate()
     results = emailfunctions.search_messages(service, "no.reply.inreach@garmin.com")
-    print(f"results={results}", flush=True)
+    #print(f"results={results}", flush=True)
 
     inreach_msgs = []
     for result in results:
@@ -144,7 +152,6 @@ def checkMail():
 
 print('Starting loop')
 while(True):
-    time.sleep(10)
     print('Checking...', flush=True)
     checkMail()
     time.sleep(240)
