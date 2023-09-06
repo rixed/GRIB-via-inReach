@@ -1,0 +1,9 @@
+#!/bin/sh
+
+if test -z "$YOUR_EMAIL"; then
+  echo "YOU MUST SET YOUR_EMAIL"
+  exit 1
+fi
+
+#exec python3 ./main.py
+sleep 999999
