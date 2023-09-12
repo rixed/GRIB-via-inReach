@@ -1,11 +1,18 @@
 .PHONY: all docker run
 
-all: docker
+all: docker docker-srv docker-clt
 
 include make.inc
 
-docker: Dockerfile
-	docker build -t rixed/grib-via-inreach -f Dockerfile --build-arg EMAIL=$(EMAIL) .
+docker: docker-srv docker-clt
+
+docker-srv: Dockerfile-srv
+	@echo Building SERVER docker image
+	docker build -t rixed/grib-via-inreach -f $< --build-arg EMAIL=$(EMAIL) .
+
+docker-clt: Dockerfile-clt
+	@echo Building CLIENT docker image
+	docker build -t rixed/grib-via-inreach -f $< --build-arg EMAIL=$(EMAIL) .
 
 run:
 	docker run -e 'YOUR_EMAIL=$(EMAIL)' --name vaudoomap -d rixed/grib-via-inreach bash
