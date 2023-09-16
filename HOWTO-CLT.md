@@ -1,4 +1,4 @@
-Comment utiliser l'image docker:
+Comment lancer l'image docker:
 
  % docker run -ti --network=host -e DISPLAY=:0 rixed/grib-via-inreach-clt
 

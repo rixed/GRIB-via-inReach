@@ -21,7 +21,10 @@ RUN cd / && \
         python3-pandas \
         xygrib
 
-COPY start codec.py /GRIB-via-inReach/
+RUN DEBIAN_FRONTEND=noninteractive \
+      apt-get --yes install nano
+
+COPY decode.py codec.py /GRIB-via-inReach/
 # A patch to fix findlibs
 COPY eccodes.patch /tmp
 RUN patch /usr/lib/python3/dist-packages/gribapi/bindings.py /tmp/eccodes.patch
