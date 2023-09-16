@@ -1,0 +1,10 @@
+28,31c28,31
+< try:
+<     import ecmwflibs as findlibs
+< except ImportError:
+<     import findlibs
+---
+> #try:
+> #    import ecmwflibs as findlibs
+> #except ImportError:
+> import findlibs

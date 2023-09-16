@@ -18,7 +18,8 @@ RUN cd / && \
         python3-googleapi \
         python3-google-auth-oauthlib \
         python3-numpy \
-        python3-pandas
+        python3-pandas \
+        wget
 
 COPY start main.py emailfunctions.py codec.py credentials.json /GRIB-via-inReach/
 # A patch to fix findlibs
