@@ -80,32 +80,37 @@ def answerService(message_id):
     print(f"text = {msg_text}", flush=True)
     url = None
     domain_prefix = None
-    for line in urlsafe_b64decode(msg['payload']['body']['data']).decode().split('\n'):
+    full_msg = urlsafe_b64decode(msg['payload']['body']['data']).decode()
+    for line in full_msg.split('\n'):
         m = GARMIN_URL_RE.search(line)
         if m is not None:
             url = line.replace('\r', '')
             domain_prefix = m.group(1)
             break
     if url is None:
-        print("Cannot find GARMIN URL", flush=True)
+        print(f"Cannot find GARMIN URL in:\n{full_msg}\n", flush=True)
         return
     else:
         print(f"Will send using url:{url} and domain_prefix:{domain_prefix}")
 
     if msg_text[:5] == 'ecmwf' or msg_text[:3] == 'gfs': # Only allows for ECMWF or GFS model
-        emailfunctions.send_message(service, "query@saildocs.com", "", "send " + msg_text) # Sends message to saildocs according to their formatting.
+        emailfunctions.send_message(service, "query@saildocs.com", message_id, "send " + msg_text) # Sends message to saildocs according to their formatting.
         time_sent = datetime.utcnow()
         valid_response = False
 
         for i in range(60): # Waits for reply and makes sure reply received aligns with request (there's probably a better way to do this).
             print("Waiting for answer...")
             time.sleep(10)
-            last_response = emailfunctions.search_messages(service,"query-reply@saildocs.com")[0]
-            time_received = pd.to_datetime(service.users().messages().get(userId='me', id=last_response['id']).execute()['payload']['headers'][-1]['value'].split('(UTC)')[0])
-            if time_received > time_sent:
-                print("Found response!")
-                valid_response = True
-                break
+            last_responses = emailfunctions.search_messages(service, "from:query-reply@saildocs.com")
+            if len(last_responses) > 0:
+                    last_response = last_responses[0]
+                    header = service.users().messages().get(userId='me', id=last_response['id']).execute()['payload']['headers']
+                    print(f"header = {header}")
+                    time_received = pd.to_datetime(header[-1]['value'].split('(UTC)')[0])
+                    if time_received > time_sent:
+                        print("Found response!")
+                        valid_response = True
+                        break
 
         if valid_response:
             try:
@@ -129,8 +134,8 @@ def checkMail():
     ### This function checks the email inbox for Garmin inReach messages. I tried to account for multiple messages.
     global service
     service = emailfunctions.gmail_authenticate()
-    results = emailfunctions.search_messages(service, "no.reply.inreach@garmin.com")
-    #print(f"results={results}", flush=True)
+    results = emailfunctions.search_messages(service, "from:no.reply.inreach@garmin.com")
+    print(f"{len(results)} results", flush=True)
 
     inreach_msgs = []
     for result in results:
@@ -141,6 +146,7 @@ def checkMail():
         previous = f.read()
 
         unanswered = [message for message in inreach_msgs if message not in previous.split('\n')]
+        print(f"unanswered={unanswered}")
         for message_id in unanswered:
             try:
                 answerService(message_id)

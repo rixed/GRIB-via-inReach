@@ -15,7 +15,7 @@ It will now tell:
 
 > Please visit this URL to authorize this application: https://accounts.google.com/o/oauth2/...
 
-On a browser, go to that URL, select one of the authorized account and then accept everything.
+On a browser, go to that URL, select the vaudoomap account and then accept everything.
 The last redirect will fail, trying to access localhost (thinking it will access the google lib auth client service).
 
 You can copy and paste the URL and execute it with wget from the docker instance where main.py is running.
