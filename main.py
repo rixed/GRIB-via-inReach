@@ -153,5 +153,9 @@ def checkMail():
 print('Starting loop')
 while(True):
     print('Checking...', flush=True)
-    checkMail()
+    try:
+        checkMail()
+    except TimeoutError:
+        print("Timeout! Let's pause for a bit...\n")
+        time.sleep(500)
     time.sleep(240)
