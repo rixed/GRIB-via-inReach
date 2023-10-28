@@ -1,3 +1,4 @@
-credentials.json
-make.inc
-TOKEN.md
+requirements.txt
+.mail-conf.json
+.state.json
+venv

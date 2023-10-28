@@ -1,9 +1,8 @@
 #!/bin/sh
 
-if test -z "$YOUR_EMAIL"; then
-  echo "YOU MUST SET YOUR_EMAIL"
-  exit 1
-fi
+. venv/bin/activate
 
-#exec python3 ./main.py
-sleep 999999
+while true; do
+  python3 ./mail2grib.py
+  sleep 9
+done
