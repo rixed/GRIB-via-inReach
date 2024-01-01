@@ -8,11 +8,11 @@ all: docker docker-srv docker-clt
 
 docker: docker-srv docker-clt
 
-docker-srv: Dockerfile-srv
+docker-srv: Dockerfile-srv start mail2grib.py codec.py requirements.txt .mail-conf.json
 	@echo Building SERVER docker image
 	docker build -t rixed/grib-via-inreach -f $< .
 
-docker-clt: Dockerfile-clt
+docker-clt: Dockerfile-clt decode.py codec.py eccodes.patch
 	@echo Building CLIENT docker image
 	docker build -t rixed/grib-via-inreach-clt -f $< .
 

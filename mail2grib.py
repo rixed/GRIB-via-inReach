@@ -271,6 +271,7 @@ def main():
     parser.add_argument('-l', '--long-delay', type=int, default=60, help="How long to sleep in between two mailbox checks when no weather forecast request is going on")
     parser.add_argument('-s', '--short-delay', type=int, default=5, help="How long to sleep in between two mailbox checks when some weather forecast requests are going on")
     parser.add_argument('--state-file', help="JSON file where the internal state is saved", default=".state.json")
+    parser.add_argument('-c', '--count', type=int, default=0, help="How many emails to handle before quitting (0: loop forever)")
     parser.add_argument('-d', '--debug', action='store_true', help="Verbose logs")
     args = parser.parse_args()
 
@@ -284,7 +285,9 @@ def main():
 
     random.seed()
 
-    while(True):
+    num_loops = 0
+    while(args.count <= 0 or num_loops < args.count):
+        num_loops += 1
         state = read_state(args.state_file)
         try:
             state = check_mail(state, mail_conf)

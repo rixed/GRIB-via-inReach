@@ -3,6 +3,7 @@
 . venv/bin/activate
 
 while true; do
-  python3 ./mail2grib.py
+  echo "(Re)Starting mail2grib..."
+  python3 ./mail2grib.py -c 10
   sleep 9
 done
