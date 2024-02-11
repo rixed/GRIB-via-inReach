@@ -1,5 +1,5 @@
 import argparse
-from codec import encode
+from codec import encode, just_print
 from datetime import datetime, timedelta
 from imap_tools import MailBox, AND
 import json
@@ -273,6 +273,7 @@ def main():
     parser.add_argument('--state-file', help="JSON file where the internal state is saved", default=".state.json")
     parser.add_argument('-c', '--count', type=int, default=0, help="How many emails to handle before quitting (0: loop forever)")
     parser.add_argument('-d', '--debug', action='store_true', help="Verbose logs")
+    parser.add_argument('--encode', help="Just encode this file and quit")
     args = parser.parse_args()
 
     level=logging.INFO
@@ -284,6 +285,10 @@ def main():
         mail_conf = json.load(f)
 
     random.seed()
+
+    if args.encode:
+        encode(args.encode, just_print)
+        exit(0)
 
     num_loops = 0
     while(args.count <= 0 or num_loops < args.count):

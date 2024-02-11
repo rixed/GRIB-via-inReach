@@ -157,7 +157,7 @@ def to_floats(lst):
 
 
 def reindex(data, hours, latitude, longitude):
-    assert len(data) == len(hours) * len(latitude) * len(longitude)
+    assert len(data) == len(hours) * len(latitude) * len(longitude), f"{len(data)=}!={len(hours)}*{len(latitude)}*{len(longitude)}"
     i = 0
     x = []
     for h in range(len(hours)):
