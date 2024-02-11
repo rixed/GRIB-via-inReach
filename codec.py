@@ -1,5 +1,5 @@
 import os
-import cfgrib
+import cfgrib  # type: ignore[import-untyped]
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -254,11 +254,11 @@ def decode(parts, grib_file):
         #ds['v10']['P2'] = hours[h]
 
         tmp_file = grib_file + ".tmp"
-        from cfgrib.xarray_to_grib import to_grib
+        from cfgrib.xarray_to_grib import to_grib  # type: ignore[import-untyped]
         to_grib(ds, tmp_file)
 
         # Now reopen it to set the proper parameterNumber/Category and times
-        import pygrib
+        import pygrib  # type: ignore[import-untyped]
         grbs = pygrib.open(tmp_file)
         grb1 = grbs.message(1)
         grb1['parameterCategory'] = 2

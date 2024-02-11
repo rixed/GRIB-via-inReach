@@ -1,6 +1,11 @@
 .PHONY: all run docker docker-srv docker-clt docker-push
 
-all: docker docker-srv docker-clt
+all: build
+
+check:
+	mypy --install-types *.py
+
+build: docker docker-srv docker-clt
 
 .mail-conf.json:
 	@echo The file $@ must be created with your own imap/smtp settings

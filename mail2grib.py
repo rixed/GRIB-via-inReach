@@ -224,17 +224,20 @@ def check_mail(state, mail_conf):
     Check the inbox for unseen Garmin InReach messages.
     """
     had_mail = False
-    with MailBox(mail_conf['imap-host']).login(mail_conf['username'], mail_conf['password'], mail_conf['folder']) as mailbox:
-        for msg in mailbox.fetch(AND(seen=False)):
-            had_mail = True
-            print(f"New email: Subject:{msg.subject}, Date:{msg.date_str}", flush=True)
-            try:
-                state = answer_service(state, mail_conf, msg)
-            except Exception as e:
-                logging.error("CANNOT ANSWER EMAIL!")
-                logging.error(traceback.format_exc())
-    if not had_mail:
-        logging.debug("No new mails.")
+    try:
+        with MailBox(mail_conf['imap-host']).login(mail_conf['username'], mail_conf['password'], mail_conf['folder']) as mailbox:
+            for msg in mailbox.fetch(AND(seen=False)):
+                had_mail = True
+                print(f"New email: Subject:{msg.subject}, Date:{msg.date_str}", flush=True)
+                try:
+                    state = answer_service(state, mail_conf, msg)
+                except Exception as e:
+                    logging.error("CANNOT ANSWER EMAIL!")
+                    logging.error(traceback.format_exc())
+        if not had_mail:
+            logging.debug("No new mails.")
+    except Exception as e:
+        logging.error(f"CANNOT READ MAILBOX: {e}, more luck next time?")
 
     return state
 
