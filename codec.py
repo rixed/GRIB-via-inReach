@@ -8,6 +8,7 @@ CONST_MAX_SHIFT = 10
 CONST_MAX_MSG_SIZE = 120
 
 # Characters that can (almost) safely be sent via inReach:
+# FIXME: apparently, "Θ" can cause problems. Remove it and add another CONST_EXTRACHARS?
 CONST_CHARS = """!"#$%\'()*+,-./:;<=>?_¡£¥¿&¤0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÅÆÇÉÑØøÜßÖàäåæèéìñòöùüΔΦΓΛΩΠΨΣΘΞ"""
 # To get a full range of 128 code possibilities, these are extra two character
 # codes:
@@ -32,10 +33,10 @@ def next_part(part_no, bin_data, consumed, timepoints, latmin, latmax, lonmin, l
         if len(x) < 7:
             x = x + '0'*(7-len(x))
         dec = int(x, 2)
-        if dec < 122:
+        if dec < len(CONST_CHARS):
             return new_chars[dec]
         else:
-            return CONST_EXTRACHARS[dec - 122]
+            return CONST_EXTRACHARS[dec - len(CONST_CHARS)]
 
     part = ''
     # First the global header:
