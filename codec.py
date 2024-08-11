@@ -99,6 +99,12 @@ def encode(grib_file, send_part):
     # This encodes the wind direction into 16 cardinal directions and converts
     # to binary.
     dirs = (((round(np.arctan2(grib['v10'], grib['u10']) / (2 * np.pi / 16))) + 16) % 16).astype('int').apply(to_binary_byte).str.cat()
+    # dirs and mag should be of the same size
+    assert len(dirs) == len(mag), f"{len(dirs)=} != {len(mag)=}"
+    # Every number is encoded as binary string of four '0' and '1':
+    assert len(dirs) % 4 == 0
+    assert len(mag) % 4 == 0
+
     # bin_data is a string of 0 and 1 encoding the low-res U/V values
     bin_data = mag + dirs
 
@@ -109,6 +115,8 @@ def encode(grib_file, send_part):
     consumed = 0
     while shift <= CONST_MAX_SHIFT and consumed < len(bin_data):
         part, new_consumed = next_part(part_no, bin_data, consumed, timepoints, latmin, latmax, lonmin, lonmax, latdiff[0], londiff[0], gribtime, shift)
+        # We consume bits by groups of 7:
+        assert new_consumed % 7 == 0, f"{new_consumed=} % 4 != 0, {consumed=}"
         if send_part(part):
             # Success
             part_no += 1
@@ -157,15 +165,15 @@ def to_floats(lst):
     return [ float(x) for x in lst ]
 
 
-def reindex(data, hours, latitude, longitude):
-    assert len(data) == len(hours) * len(latitude) * len(longitude), f"{len(data)=}!={len(hours)}*{len(latitude)}*{len(longitude)}"
+def reindex(data, num_hour, num_lat, num_lon):
+    assert len(data) == num_hour * num_lat * num_lon, f"{len(data)=}!={num_hour}*{num_lat}*{num_lon}"
     i = 0
     x = []
-    for h in range(len(hours)):
+    for h in range(num_hour):
         x.append([])
-        for lat in range(len(latitude)):
+        for lat in range(num_lat):
             x[h].append([])
-            for lon in range(len(longitude)):
+            for lon in range(num_lon):
                 x[h][lat].append(data[i])
                 i += 1
     return x
@@ -181,7 +189,14 @@ def decode(parts, grib_file):
     hours = part0[0].split(',')
     gribdate, gribtime = part0[1].split(" ")
     latmin, latmax, lonmin, lonmax = to_floats(part0[2].split(','))
+    #print(f"{latmin=}, {latmax=}, {lonmin=}, {lonmax=}")
     latdiff, londiff = to_floats(part0[3].split(','))
+    #print(f"{latdiff=}, {londiff=}")
+    num_lon = 1 + int(round((lonmax-lonmin)/londiff))
+    num_lat = 1 + int(round((latmax-latmin)/latdiff))
+    num_hour = len(hours)
+    num_vec = num_lon * num_lat * num_hour
+    #print(f"{num_lon=}, {num_lat=}, {num_hour=} -> {num_vec=}")
     decoded = ''
     for part_no, part in enumerate(parts):
         if part_no == 0:
@@ -193,29 +208,40 @@ def decode(parts, grib_file):
             data = lines[1:]
         while data[-1] == "END" or data[-1] == "":
             data = data[:-1]
-        decoded += decode_msg(''.join(data), shift)
+        encoded = ''.join(data)
+        dec = decode_msg(encoded, shift)
+        decoded += dec
+    # At the end, since we consumed bits by groups of 7, the last encoded character might be decoded into more bits than necessary. Therefore, truncate the result to the number of expected bits:
+    num_bit = 4 * (num_vec * 2)  # dirs and mag
+    assert len(decoded) >= num_bit
+    decoded = decoded[0:num_bit]
     # Now build the dataframe:
     decoded = [decoded[i:i+4] for i in range(0, len(decoded), 4)]
-    if len(decoded[-1]) < 4:
-        del decoded[-1]
+    assert len(decoded[-1]) == 4
     decoded = [int(i, 2) for i in decoded]
     half_len = int(len(decoded)/2)
+    #print(f"decoded:{len(decoded)}")
+    #print(f"{half_len=}")
     mag = pd.Series(decoded[:half_len])
     dirs = pd.Series(decoded[half_len:]).reset_index(drop=True)
+    #print(f"dirs:{len(dirs)}")
+    #print(f"mag:{len(mag)}")
+    # dirs and mag should be of the same size
+    assert len(dirs) == len(mag), f"{len(dirs)=} != {len(mag)=}"
 
     mag = mag*5/1.94384
     v10 = np.sin(2*np.pi*dirs/16)*mag
     u10 = np.cos(2*np.pi*dirs/16)*mag
 
     # Create a sample DataFrame with one array of values
-    longitude = np.linspace(lonmin, lonmax, 1 + int(round((lonmax-lonmin)/londiff)), endpoint=True)
-    latitude = np.linspace(latmin, latmax, 1 + int(round((latmax-latmin)/latdiff)), endpoint=True)
+    longitude = np.linspace(lonmin, lonmax, num_lon, endpoint=True)
+    latitude = np.linspace(latmin, latmax, num_lat, endpoint=True)
     #print(f"lon:{len(longitude)}")
     #print(f"lat:{len(latitude)}")
     #print(f"v10:{len(v10)}, u10:{len(u10)}")
     # Make v10 and u10 per hour and "square":
-    v10 = reindex(v10, hours, latitude, longitude)
-    u10 = reindex(u10, hours, latitude, longitude)
+    v10 = reindex(v10, num_hour, num_lat, num_lon)
+    u10 = reindex(u10, num_hour, num_lat, num_lon)
     #print(f"v10={v10}")
     # Define the projection information
     proj_info = {
