@@ -27,4 +27,5 @@ docker-push:
 	docker push rixed/grib-via-inreach
 
 run:
-	docker run --name vaudoomap -d rixed/grib-via-inreach bash
+	docker rm -f vaudoomap || true
+	docker run --name vaudoomap --restart=unless-stopped -d rixed/grib-via-inreach bash
