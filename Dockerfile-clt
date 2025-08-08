@@ -1,5 +1,5 @@
 ARG EMAIL
-FROM debian:stable
+FROM debian:bookworm
 
 RUN cd / && \
     echo 'APT::Install-Recommends "0";' > \

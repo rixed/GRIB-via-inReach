@@ -1,5 +1,5 @@
 # vim: ft=dockerfile
-FROM debian:stable
+FROM debian:bookworm
 
 RUN cd / && \
     echo 'APT::Install-Recommends "0";' > \
@@ -19,7 +19,29 @@ RUN cd / && \
         libeccodes-tools \
         python3-dev \
         python3-full \
-        python3-pip \
+        python3-cfgrib \
+        python3-attr \
+        python3-certifi \
+        python3-cffi \
+        python3-charset-normalizer \
+        python3-click \
+        python3-eccodes \
+        python3-findlibs \
+        python3-idna \
+        python3-imap-tools \
+        python3-numpy \
+        python3-packaging \
+        python3-pandas \
+        python3-pycparser \
+        python3-pyproj \
+        python3-dateutil \
+        python3-pytzdata \
+        python3-tz \
+        python3-pytz-deprecation-shim \
+        python3-requests \
+        python3-six \
+        python3-urllib3 \
+        python3-xarray \
         wget
 
 COPY start mail2grib.py codec.py requirements.txt /GRIB-via-inReach/
@@ -29,9 +51,7 @@ COPY .mail-conf.json /GRIB-via-inReach/
 # Install all dependencies using pip:
 WORKDIR /GRIB-via-inReach
 RUN python3 -m venv venv && \
-    . venv/bin/activate && \
-    pip install --use-pep517 eccodes && \
-    pip install --use-pep517 -r requirements.txt
+    venv/bin/pip install pygrib
 
 ENV ATTACHMENTS_PATH=/GRIB-via-inReach/attachments
 
