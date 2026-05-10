@@ -17,7 +17,7 @@ import traceback
 ATTACHMENTS_PATH = os.environ.get("ATTACHMENTS_PATH", "/tmp/GRIB-via-inReach/attachments") # Where you want to save attachment files.
 
 
-def inreachReply(mail_conf, url, domain_prefix, message_str):
+def inreachReply(mail_conf, req, message_str):
     """
     Use the URL provided by Garmin to message the sailor
     """
@@ -26,16 +26,16 @@ def inreachReply(mail_conf, url, domain_prefix, message_str):
     }
 
     headers = {
-        'authority': f"{domain_prefix}explore.garmin.com",
+        'authority': f"{req['domain_prefix']}explore.garmin.com",
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9',
         'cache-control': 'no-cache',
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'cookie': 'BrowsingMode=Desktop',
         'dnt': '1',
-        'origin': f"https://{domain_prefix}explore.garmin.com",
+        'origin': f"https://{req['domain_prefix']}explore.garmin.com",
         'pragma': 'no-cache',
-        'referer': url,
+        'referer': req['url'],
         'sec-ch-ua': '"Chromium";v="106", "Not;A=Brand";v="99", "Google Chrome";v="106.0.5249.119"',
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Linux"',
@@ -49,23 +49,26 @@ def inreachReply(mail_conf, url, domain_prefix, message_str):
     data = {
         'ReplyAddress': mail_conf['email'],
         'ReplyMessage': message_str,
-        'MessageId': str(random.getrandbits(64)),
-        'Guid': url.split('extId=')[1].split('&adr')[0],
+        'MessageId': req['MessageId'],
+        'Guid': req['Guid'],
     }
 
     logging.info("Posting a SMS...")
-    r = requests.post(f"https://{domain_prefix}explore.garmin.com/TextMessage/TxtMsg", cookies=cookies, headers=headers, data=data)
+    logging.debug(f"cookies={cookies}")
+    logging.debug(f"headers={headers}")
+    logging.debug(f"data={data}")
+    r = requests.post(f"https://{req['domain_prefix']}explore.garmin.com/TextMessage/TxtMsg", cookies=cookies, headers=headers, data=data)
     if r.status_code != 200:
-        logging.error(f"...COULD NOT SEND! RESPONSE CODE={r.status_code}")
+        logging.error(f"...COULD NOT SEND! RESPONSE CODE={r.status_code}, CONTENT={r.content}")
     else:
         logging.info('...Sent!')
     return r
 
 
-def send_sms_via_url(mail_conf, url, domain_prefix):
+def send_sms_via_url(mail_conf, req):
     def send_sms(part):
-        logging.info(f"Sending to {url} ({domain_prefix}):\n{part}")
-        res = inreachReply(mail_conf, url, domain_prefix, part)
+        logging.info(f"Sending to {req['url']} ({req['domain_prefix']}):\n{part}")
+        res = inreachReply(mail_conf, req, part)
         time.sleep(10)  # Give inReach some time to send the SMS
         return (res.status_code == 200)
     return send_sms
@@ -89,7 +92,15 @@ def send_message(mail_conf, dest, text):
     return msg_id
 
 
+def extract_hidden_var(page, name):
+    match = re.search(rf'id="{name}" name="{name}" type="hidden" value="([^"]+)"', page)
+    return match.group(1) if match else None
+
+# The actual long URL
 GARMIN_URL_RE = re.compile("https://([a-z]*\.)?explore.garmin.com")
+
+# The URL minifyer
+INREACH_URL_RE = re.compile("https://inreachlink.com/[^ ]*")
 
 def handle_weather_request(state, mail_conf, msg):
     """
@@ -99,11 +110,36 @@ def handle_weather_request(state, mail_conf, msg):
     req = {}
     lines = list(filter(lambda s: len(s) > 0, [ line.strip() for line in msg.text.split('\r') ]))
     for line in lines:
-        m = GARMIN_URL_RE.search(line)
-        if m is not None:
-            req['url'] = line.strip()
-            req['domain_prefix'] = m.group(1)
+        def check_url(line):
+            m = GARMIN_URL_RE.search(line)
+            if m is not None:
+                req['url'] = line.strip()
+                req['domain_prefix'] = m.group(1)
+                # Actually fetch that page to get the MessageId et and Guid:
+                msg_page = requests.get(req['url']);
+                for name in ['MessageId', 'Guid']:
+                    v = extract_hidden_var(msg_page.text, name)
+                    if v is None:
+                        logging.error(f"...CANNOT EXTRACT variable {name} from {msg_page}")
+                        return False
+                    else:
+                        req[name] = v
+                return True
+            else:
+                return False
+
+        if check_url(line):
             break
+
+        m = INREACH_URL_RE.search(line)
+        if m is not None:
+            url = line.strip()
+            logging.debug(f"...Connecting to {url} first...")
+            response = requests.get(url, allow_redirects=False)
+            redirect_url = response.headers["Location"]
+            logging.debug(f"...Got redirected to {redirect_url}")
+            if check_url(redirect_url):
+                break
 
     if 'url' not in req:
         logging.error(f"...CANNOT FIND GARMIN URL IN:\n{msg.text}\n")
@@ -122,7 +158,7 @@ def handle_weather_request(state, mail_conf, msg):
         state.append(req)
     else:
         print(f"...CANNOT FIND PROPER WEATHER REQUEST IN '{first_line}', SENDING BACK AN ERROR MESSAGE!", flush=True)
-        inreachReply(mail_conf, req['url'], req['domain_prefix'], f"""
+        inreachReply(mail_conf, req, f"""
 Cannot make sense of the forecast request. :-(
 The forecasst request must be on the first line and look something like:
   ecmwf:25n,41n,29w,009w|2,2|12,24,36,48|wind
@@ -144,14 +180,14 @@ def forward_forecast(state, mail_conf, request, time_recvd, grib_path):
     for req in state:
         if req['request'] == request:
             # TODO: once we trust the dates, don't send if req['time_sent'] > time_recvd
-            to_send.add((req['url'], req['domain_prefix']))
+            to_send.add(frozenset(req.items()))
         else:
             logging.debug(f"...not for this sailor: {req['request']} != {request}")
             new_state.append(req)
 
     logging.info(f"...Forward the attachment to {len(to_send)} sailors!")
-    for url, domain_prefix in to_send:
-        encode(grib_path, send_sms_via_url(mail_conf, url, domain_prefix))
+    for req in to_send:
+        encode(grib_path, send_sms_via_url(mail_conf, dict(req)))
 
     return new_state
 
