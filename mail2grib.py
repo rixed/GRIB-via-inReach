@@ -143,7 +143,7 @@ def handle_weather_request(state, mail_conf, msg):
 
     if 'url' not in req:
         logging.error(f"...CANNOT FIND GARMIN URL IN:\n{msg.text}\n")
-        return
+        return state
 
     logging.info(f"...Will send using url:{req['url']} and domain_prefix:{req['domain_prefix']}")
 
