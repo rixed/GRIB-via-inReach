@@ -69,7 +69,7 @@ def send_sms_via_url(mail_conf, req):
     def send_sms(part):
         logging.info(f"Sending to {req['url']} ({req['domain_prefix']}):\n{part}")
         res = inreachReply(mail_conf, req, part)
-        time.sleep(10)  # Give inReach some time to send the SMS
+        time.sleep(15)  # Give inReach some time to send the SMS
         return (res.status_code == 200)
     return send_sms
 
